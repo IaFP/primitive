@@ -2,6 +2,7 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 
 -- |
 -- Module      : Data.Primitive.Array
@@ -33,6 +34,7 @@ import Control.DeepSeq
 import Control.Monad.Primitive
 
 import GHC.Exts hiding (toList)
+import GHC.Types (Total, WDT)
 import qualified GHC.Exts as Exts
 
 import Data.Typeable ( Typeable )
@@ -69,21 +71,21 @@ data Array a = Array
   { array# :: Array# a }
   deriving ( Typeable )
 
-instance Lift a => Lift (Array a) where
-#if MIN_VERSION_template_haskell(2,16,0)
-  liftTyped ary = case lst of
-    [] -> [|| Array (emptyArray# (##)) ||]
-    [x] -> [|| pure $! x ||]
-    x : xs -> [|| unsafeArrayFromListN' len x xs ||]
-#else
-  lift ary = case lst of
-    [] -> [| Array (emptyArray# (##)) |]
-    [x] -> [| pure $! x |]
-    x : xs -> [| unsafeArrayFromListN' len x xs |]
-#endif
-    where
-      len = length ary
-      lst = toList ary
+-- instance Lift a => Lift (Array a) where
+-- #if MIN_VERSION_template_haskell(2,16,0)
+--   liftTyped ary = case lst of
+--     [] -> [|| Array (emptyArray# (##)) ||]
+--     [x] -> [|| pure $! x ||]
+--     x : xs -> [|| unsafeArrayFromListN' len x xs ||]
+-- #else
+--   lift ary = case lst of
+--     [] -> [| Array (emptyArray# (##)) |]
+--     [x] -> [| pure $! x |]
+--     x : xs -> [| unsafeArrayFromListN' len x xs |]
+-- #endif
+--     where
+--       len = length ary
+--       lst = toList ary
 
 -- | Strictly create an array from a nonempty list (represented as
 -- a first element and a list of the rest) of a known length. If the length
@@ -514,7 +516,7 @@ instance Traversable Array where
   {-# INLINE traverse #-}
 
 traverseArray
-  :: Applicative f
+  :: (Total f, Applicative f)
   => (a -> f b)
   -> Array a
   -> f (Array b)
@@ -548,7 +550,7 @@ traverseArray f = \ !ary ->
 -- /one/ result array. 'Control.Monad.Trans.List.ListT'-transformed
 -- monads, for example, will not work right at all.
 traverseArrayP
-  :: PrimMonad m
+  :: (PrimMonad m, WDT (PrimState m))
   => (a -> m b)
   -> Array a
   -> m (Array b)

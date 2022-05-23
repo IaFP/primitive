@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts, FlexibleInstances, UndecidableInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# OPTIONS_GHC -fno-warn-deprecations #-}
 
 -- |
@@ -54,6 +55,8 @@ import Control.Monad.Trans.Accum    ( AccumT   )
 import Control.Monad.Trans.Select   ( SelectT  )
 #endif
 
+import GHC.Types ( Total, WDT)
+
 #if MIN_VERSION_transformers(0,5,6)
 import qualified Control.Monad.Trans.Writer.CPS as CPS
 import qualified Control.Monad.Trans.RWS.CPS as CPS
@@ -64,7 +67,7 @@ import qualified Control.Monad.Trans.State.Strict  as Strict ( StateT )
 import qualified Control.Monad.Trans.Writer.Strict as Strict ( WriterT )
 
 -- | Class of monads which can perform primitive state-transformer actions.
-class Monad m => PrimMonad m where
+class (Total m, Monad m) => PrimMonad m where
   -- | State token type.
   type PrimState m
 
@@ -83,7 +86,7 @@ class PrimMonad m => PrimBase m where
   internal :: m a -> State# (PrimState m) -> (# State# (PrimState m), a #)
 
 -- | Execute a primitive operation with no result.
-primitive_ :: PrimMonad m
+primitive_ :: (WDT (PrimState m), PrimMonad m)
               => (State# (PrimState m) -> State# (PrimState m)) -> m ()
 {-# INLINE primitive_ #-}
 primitive_ f = primitive (\s# ->
@@ -278,18 +281,18 @@ stToPrim = primToPrim
 
 -- | Convert a 'PrimBase' to another monad with a possibly different state
 -- token. This operation is highly unsafe!
-unsafePrimToPrim :: (PrimBase m1, PrimMonad m2) => m1 a -> m2 a
+unsafePrimToPrim :: (WDT (PrimState m1), WDT (PrimState m2), PrimBase m1, PrimMonad m2) => m1 a -> m2 a
 {-# INLINE unsafePrimToPrim #-}
 unsafePrimToPrim m = primitive (unsafeCoerce# (internal m))
 
 -- | Convert any 'PrimBase' to 'ST' with an arbitrary state token. This
 -- operation is highly unsafe!
-unsafePrimToST :: PrimBase m => m a -> ST s a
+unsafePrimToST :: (PrimBase m, WDT (PrimState m)) => m a -> ST s a
 {-# INLINE unsafePrimToST #-}
 unsafePrimToST = unsafePrimToPrim
 
 -- | Convert any 'PrimBase' to 'IO'. This operation is highly unsafe!
-unsafePrimToIO :: PrimBase m => m a -> IO a
+unsafePrimToIO :: (WDT (PrimState m), PrimBase m) => m a -> IO a
 {-# INLINE unsafePrimToIO #-}
 unsafePrimToIO = unsafePrimToPrim
 
@@ -297,7 +300,7 @@ unsafePrimToIO = unsafePrimToPrim
 -- This operation is highly unsafe!
 --
 -- @since 0.6.2.0
-unsafeSTToPrim :: PrimMonad m => ST s a -> m a
+unsafeSTToPrim :: (WDT (PrimState m), PrimMonad m) => ST s a -> m a
 {-# INLINE unsafeSTToPrim #-}
 unsafeSTToPrim = unsafePrimToPrim
 
@@ -305,13 +308,13 @@ unsafeSTToPrim = unsafePrimToPrim
 -- unsafe!
 --
 -- @since 0.6.2.0
-unsafeIOToPrim :: PrimMonad m => IO a -> m a
+unsafeIOToPrim :: (WDT (PrimState m), PrimMonad m) => IO a -> m a
 {-# INLINE unsafeIOToPrim #-}
 unsafeIOToPrim = unsafePrimToPrim
 
 -- | See 'unsafeInlineIO'. This function is not recommended for the same
 -- reasons.
-unsafeInlinePrim :: PrimBase m => m a -> a
+unsafeInlinePrim :: (WDT (PrimState m), PrimBase m) => m a -> a
 {-# INLINE unsafeInlinePrim #-}
 unsafeInlinePrim m = unsafeInlineIO (unsafePrimToIO m)
 
@@ -330,7 +333,7 @@ unsafeInlineST :: ST s a -> a
 {-# INLINE unsafeInlineST #-}
 unsafeInlineST = unsafeInlinePrim
 
-touch :: PrimMonad m => a -> m ()
+touch :: (WDT (PrimState m), PrimMonad m) => a -> m ()
 {-# INLINE touch #-}
 touch x = unsafePrimToPrim
         $ (primitive (\s -> case touch# x s of { s' -> (# s', () #) }) :: IO ())
@@ -338,10 +341,10 @@ touch x = unsafePrimToPrim
 -- | Create an action to force a value; generalizes 'Control.Exception.evaluate'
 --
 -- @since 0.6.2.0
-evalPrim :: forall a m . PrimMonad m => a -> m a
+evalPrim :: forall a m . (WDT (PrimState m), PrimMonad m) => a -> m a
 evalPrim a = primitive (\s -> seq# a s)
 
-noDuplicate :: PrimMonad m => m ()
+noDuplicate :: (WDT (PrimState m), PrimMonad m) => m ()
 #if __GLASGOW_HASKELL__ >= 802
 noDuplicate = primitive $ \ s -> (# noDuplicate# s, () #)
 #else
@@ -349,7 +352,7 @@ noDuplicate = primitive $ \ s -> (# noDuplicate# s, () #)
 noDuplicate = unsafeIOToPrim $ primitive $ \s -> (# noDuplicate# s, () #)
 #endif
 
-unsafeInterleave, unsafeDupableInterleave :: PrimBase m => m a -> m a
+unsafeInterleave, unsafeDupableInterleave :: (WDT (PrimState m), PrimBase m) => m a -> m a
 unsafeInterleave x = unsafeDupableInterleave (noDuplicate >> x)
 unsafeDupableInterleave x = primitive $ \ s -> let r' = case internal x s of (# _, r #) -> r in (# s, r' #)
 {-# INLINE unsafeInterleave #-}

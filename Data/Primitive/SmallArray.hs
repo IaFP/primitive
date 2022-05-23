@@ -8,6 +8,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 
 -- |
 -- Module : Data.Primitive.SmallArray
@@ -85,6 +86,8 @@ import Data.Monoid
 import qualified GHC.ST as GHCST
 import qualified Data.Semigroup as Sem
 import Text.ParserCombinators.ReadP
+import GHC.Types (Total, WDT)
+
 #if !MIN_VERSION_base(4,10,0)
 import GHC.Base (runRW#)
 #endif
@@ -106,21 +109,21 @@ instance NFData a => NFData (SmallArray a) where
 data SmallMutableArray s a = SmallMutableArray (SmallMutableArray# s a)
   deriving Typeable
 
-instance Lift a => Lift (SmallArray a) where
-#if MIN_VERSION_template_haskell(2,16,0)
-  liftTyped ary = case lst of
-    [] -> [|| SmallArray (emptySmallArray# (##)) ||]
-    [x] -> [|| pure $! x ||]
-    x : xs -> [|| unsafeSmallArrayFromListN' len x xs ||]
-#else
-  lift ary = case lst of
-    [] -> [| SmallArray (emptySmallArray# (##)) |]
-    [x] -> [| pure $! x |]
-    x : xs -> [| unsafeSmallArrayFromListN' len x xs |]
-#endif
-    where
-      len = length ary
-      lst = toList ary
+-- instance Lift a => Lift (SmallArray a) where
+-- #if MIN_VERSION_template_haskell(2,16,0)
+--   liftTyped ary = case lst of
+--     [] -> [|| SmallArray (emptySmallArray# (##)) ||]
+--     [x] -> [|| pure $! x ||]
+--     x : xs -> [|| unsafeSmallArrayFromListN' len x xs ||]
+-- #else
+--   lift ary = case lst of
+--     [] -> [| SmallArray (emptySmallArray# (##)) |]
+--     [x] -> [| pure $! x |]
+--     x : xs -> [| unsafeSmallArrayFromListN' len x xs |]
+-- #endif
+--     where
+--       len = length ary
+--       lst = toList ary
 
 -- | Strictly create an array from a nonempty list (represented as
 -- a first element and a list of the rest) of a known length. If the length
@@ -362,7 +365,7 @@ sizeofSmallMutableArray (SmallMutableArray sa#) =
 -- /one/ result array. 'Control.Monad.Trans.List.ListT'-transformed
 -- monads, for example, will not work right at all.
 traverseSmallArrayP
-  :: PrimMonad m
+  :: (WDT (PrimState m), PrimMonad m)
   => (a -> m b)
   -> SmallArray a
   -> m (SmallArray b)
@@ -609,7 +612,7 @@ instance Traversable SmallArray where
   {-# INLINE traverse #-}
 
 traverseSmallArray
-  :: Applicative f
+  :: (Total f, Applicative f)
   => (a -> f b) -> SmallArray a -> f (SmallArray b)
 traverseSmallArray f = \ !ary ->
   let

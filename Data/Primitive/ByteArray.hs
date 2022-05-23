@@ -2,6 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
 
 -- |
@@ -76,6 +77,8 @@ import Data.Bits ( (.&.), unsafeShiftR )
 import GHC.Show ( intToDigit )
 import qualified GHC.Exts as Exts
 import GHC.Exts hiding (setByteArray#)
+
+import GHC.Types (Total, WDT)
 
 import Data.Typeable ( Typeable )
 import Data.Data ( Data(..), mkNoRepType )
@@ -453,7 +456,7 @@ copyMutableByteArray (MutableByteArray dst#) doff
 --
 -- @since 0.7.1.0
 copyByteArrayToPtr
-  :: forall m a. (PrimMonad m, Prim a)
+  :: forall m a. (PrimMonad m, Prim a, WDT (PrimState m))
   => Ptr a -- ^ destination
   -> ByteArray -- ^ source array
   -> Int -- ^ offset into source array, interpreted as elements of type @a@
@@ -513,7 +516,7 @@ copyMutableByteArrayToPtr (Ptr dst#) (MutableByteArray src#) soff sz
 --
 -- @since 0.6.4.0
 copyByteArrayToAddr
-  :: PrimMonad m
+  :: (WDT (PrimState m), PrimMonad m)
   => Ptr Word8 -- ^ destination
   -> ByteArray -- ^ source array
   -> Int -- ^ offset into source array

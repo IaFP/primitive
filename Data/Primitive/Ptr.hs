@@ -2,6 +2,8 @@
 {-# LANGUAGE MagicHash #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE QuantifiedConstraints #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- |
 -- Module      : Data.Primitive.Ptr
@@ -40,6 +42,7 @@ import Data.Primitive.ByteArray (copyPtrToMutableByteArray)
 import GHC.Exts
 import GHC.Ptr
 import Foreign.Marshal.Utils
+import GHC.Types (Total, WDT)
 
 
 -- | Offset a pointer by the given number of elements.
@@ -63,19 +66,19 @@ indexOffPtr (Ptr addr#) (I# i#) = indexOffAddr# addr# i#
 
 -- | Read a value from a memory position given by an address and an offset.
 -- The offset is in elements of type @a@ rather than in bytes.
-readOffPtr :: (Prim a, PrimMonad m) => Ptr a -> Int -> m a
+readOffPtr :: (Prim a, PrimMonad m, WDT (PrimState m)) => Ptr a -> Int -> m a
 {-# INLINE readOffPtr #-}
 readOffPtr (Ptr addr#) (I# i#) = primitive (readOffAddr# addr# i#)
 
 -- | Write a value to a memory position given by an address and an offset.
 -- The offset is in elements of type @a@ rather than in bytes.
-writeOffPtr :: (Prim a, PrimMonad m) => Ptr a -> Int -> a -> m ()
+writeOffPtr :: (Prim a, PrimMonad m, WDT (PrimState m)) => Ptr a -> Int -> a -> m ()
 {-# INLINE writeOffPtr #-}
 writeOffPtr (Ptr addr#) (I# i#) x = primitive_ (writeOffAddr# addr# i# x)
 
 -- | Copy the given number of elements from the second 'Ptr' to the first. The
 -- areas may not overlap.
-copyPtr :: forall m a. (PrimMonad m, Prim a)
+copyPtr :: forall m a. (PrimMonad m, Prim a, WDT (PrimState m))
   => Ptr a -- ^ destination pointer
   -> Ptr a -- ^ source pointer
   -> Int -- ^ number of elements
@@ -86,7 +89,7 @@ copyPtr (Ptr dst#) (Ptr src#) n
 
 -- | Copy the given number of elements from the second 'Ptr' to the first. The
 -- areas may overlap.
-movePtr :: forall m a. (PrimMonad m, Prim a)
+movePtr :: forall m a. (PrimMonad m, Prim a, WDT (PrimState m))
   => Ptr a -- ^ destination pointer
   -> Ptr a -- ^ source pointer
   -> Int -- ^ number of elements
@@ -97,6 +100,6 @@ movePtr (Ptr dst#) (Ptr src#) n
 
 -- | Fill a memory block with the given value. The length is in
 -- elements of type @a@ rather than in bytes.
-setPtr :: (Prim a, PrimMonad m) => Ptr a -> Int -> a -> m ()
+setPtr :: (Prim a, PrimMonad m, WDT (PrimState m)) => Ptr a -> Int -> a -> m ()
 {-# INLINE setPtr #-}
 setPtr (Ptr addr#) (I# n#) x = primitive_ (setOffAddr# addr# 0# n# x)

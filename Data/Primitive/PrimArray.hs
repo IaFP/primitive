@@ -6,6 +6,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE TemplateHaskellQuotes #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 
 -- |
 -- Module      : Data.Primitive.PrimArray
@@ -120,6 +121,7 @@ import qualified Data.Primitive.Types as PT
 import qualified GHC.ST as GHCST
 import Language.Haskell.TH.Syntax (Lift (..))
 
+import GHC.Types (Total, WDT)
 import Data.Semigroup (Semigroup)
 import qualified Data.Semigroup as SG
 
@@ -134,14 +136,14 @@ import qualified GHC.Exts as Exts
 -- which is lazy in its elements.
 data PrimArray a = PrimArray ByteArray#
 
-instance Lift (PrimArray a) where
-#if MIN_VERSION_template_haskell(2,16,0)
-  liftTyped ary = [|| byteArrayToPrimArray ba ||]
-#else
-  lift ary = [| byteArrayToPrimArray ba |]
-#endif
-    where
-      ba = primArrayToByteArray ary
+-- instance Lift (PrimArray a) where
+-- #if MIN_VERSION_template_haskell(2,16,0)
+--   liftTyped ary = [|| byteArrayToPrimArray ba ||]
+-- #else
+--   lift ary = [| byteArrayToPrimArray ba |]
+-- #endif
+--     where
+--       ba = primArrayToByteArray ary
 
 instance NFData (PrimArray a) where
   rnf (PrimArray _) = ()
@@ -384,7 +386,7 @@ copyPrimArray (MutablePrimArray dst#) (I# doff#) (PrimArray src#) (I# soff#) (I#
 -- agrees with the 'Storable' instance.
 --
 -- /Note:/ this function does not do bounds or overlap checking.
-copyPrimArrayToPtr :: forall m a. (PrimMonad m, Prim a)
+copyPrimArrayToPtr :: forall m a. (PrimMonad m, Prim a, WDT (PrimState m))
   => Ptr a -- ^ destination pointer
   -> PrimArray a -- ^ source array
   -> Int -- ^ offset into source array
@@ -651,7 +653,7 @@ foldlPrimArrayM' f z0 arr = go 0 z0
 -- Benchmarks demonstrate that the second implementation runs 150 times
 -- faster than the first. It also results in fewer allocations.
 {-# INLINE traversePrimArrayP #-}
-traversePrimArrayP :: (PrimMonad m, Prim a, Prim b)
+traversePrimArrayP :: (PrimMonad m, Prim a, Prim b, WDT (PrimState m))
   => (a -> m b)
   -> PrimArray a
   -> m (PrimArray b)
@@ -670,7 +672,7 @@ traversePrimArrayP f arr = do
 -- | Filter the primitive array, keeping the elements for which the monadic
 -- predicate evaluates to true.
 {-# INLINE filterPrimArrayP #-}
-filterPrimArrayP :: (PrimMonad m, Prim a)
+filterPrimArrayP :: (PrimMonad m, Prim a, WDT (PrimState m))
   => (a -> m Bool)
   -> PrimArray a
   -> m (PrimArray a)
@@ -694,7 +696,7 @@ filterPrimArrayP f arr = do
 -- | Map over the primitive array, keeping the elements for which the monadic
 -- predicate provides a 'Just'.
 {-# INLINE mapMaybePrimArrayP #-}
-mapMaybePrimArrayP :: (PrimMonad m, Prim a, Prim b)
+mapMaybePrimArrayP :: (PrimMonad m, Prim a, Prim b, WDT (PrimState m))
   => (a -> m (Maybe b))
   -> PrimArray a
   -> m (PrimArray b)
@@ -718,7 +720,7 @@ mapMaybePrimArrayP f arr = do
 -- | Generate a primitive array by evaluating the monadic generator function
 -- at each index.
 {-# INLINE generatePrimArrayP #-}
-generatePrimArrayP :: (PrimMonad m, Prim a)
+generatePrimArrayP :: (PrimMonad m, Prim a, Total m, WDT (PrimState m))
   => Int -- ^ length
   -> (Int -> m a) -- ^ generator
   -> m (PrimArray a)
@@ -736,7 +738,7 @@ generatePrimArrayP sz f = do
 -- | Execute the monadic action the given number of times and store the
 -- results in a primitive array.
 {-# INLINE replicatePrimArrayP #-}
-replicatePrimArrayP :: (PrimMonad m, Prim a)
+replicatePrimArrayP :: (PrimMonad m, Prim a, WDT (PrimState m))
   => Int
   -> m a
   -> m (PrimArray a)
@@ -812,7 +814,7 @@ filterPrimArray p arr = runST $ do
 -- | Filter the primitive array, keeping the elements for which the monadic
 -- predicate evaluates true.
 filterPrimArrayA
-  :: (Applicative f, Prim a)
+  :: (Applicative f, Prim a, Total f)
   => (a -> f Bool) -- ^ mapping function
   -> PrimArray a -- ^ primitive array
   -> f (PrimArray a)
@@ -836,7 +838,7 @@ filterPrimArrayA f = \ !ary ->
 -- | Map over the primitive array, keeping the elements for which the applicative
 -- predicate provides a 'Just'.
 mapMaybePrimArrayA
-  :: (Applicative f, Prim a, Prim b)
+  :: (Applicative f, Prim a, Prim b, Total f)
   => (a -> f (Maybe b)) -- ^ mapping function
   -> PrimArray a -- ^ primitive array
   -> f (PrimArray b)
@@ -894,7 +896,7 @@ mapMaybePrimArray p arr = runST $ do
 -- requires a 'PrimMonad' constraint, and it forces the values as
 -- it performs the effects.
 traversePrimArray
-  :: (Applicative f, Prim a, Prim b)
+  :: (Applicative f, Prim a, Prim b, Total f)
   => (a -> f b) -- ^ mapping function
   -> PrimArray a -- ^ primitive array
   -> f (PrimArray b)
@@ -913,7 +915,7 @@ traversePrimArray f = \ !ary ->
 
 -- | Traverse a primitive array with the index of each element.
 itraversePrimArray
-  :: (Applicative f, Prim a, Prim b)
+  :: (Applicative f, Prim a, Prim b, Total f)
   => (Int -> a -> f b)
   -> PrimArray a
   -> f (PrimArray b)
@@ -934,7 +936,7 @@ itraversePrimArray f = \ !ary ->
 -- resulting values and writes them to the new primitive array as it performs
 -- the monadic effects.
 {-# INLINE itraversePrimArrayP #-}
-itraversePrimArrayP :: (Prim a, Prim b, PrimMonad m)
+itraversePrimArrayP :: (Prim a, Prim b, PrimMonad m, WDT (PrimState m))
   => (Int -> a -> m b)
   -> PrimArray a
   -> m (PrimArray b)
@@ -981,7 +983,7 @@ replicatePrimArray len a = runST $ do
 -- function at each index.
 {-# INLINE generatePrimArrayA #-}
 generatePrimArrayA
-  :: (Applicative f, Prim a)
+  :: (Applicative f, Prim a, Total f)
   => Int -- ^ length
   -> (Int -> f a) -- ^ element from index
   -> f (PrimArray a)
@@ -1001,7 +1003,7 @@ generatePrimArrayA len f =
 -- results in a 'PrimArray'.
 {-# INLINE replicatePrimArrayA #-}
 replicatePrimArrayA
-  :: (Applicative f, Prim a)
+  :: (Applicative f, Prim a, Total f)
   => Int -- ^ length
   -> f a -- ^ applicative element producer
   -> f (PrimArray a)
